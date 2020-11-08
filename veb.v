@@ -20,19 +20,47 @@ struct Response {
 }
 
 fn main() {
+	mut interactive := false
+	for arg in os.args {
+		if arg == '-i' {
+			interactive = true
+		}
+	}
+	if interactive {
+		terminal()
+	} else {
+		cli()
+	}
+}
+
+// Interactive mode
+fn terminal() {
+	println('TODO: Implement terminal mode')
+}
+
+// Command Line Interface
+fn cli() {
 	mut input := 'gemini.circumlunar.space'
 	if os.args.len > 1 {
 		input = os.args[1]
 	}
-	mut url := process_destination(input)?
+	mut url := process_destination(input) or {
+		panic('error: $err')
+	}
 	request := Request{url: url}
 	mut response := request.do()
 	if response.status.starts_with('3') {
-		url = process_destination(response.meta)?
+		url = process_destination(response.meta) or {
+			panic('error: $err')
+		}
 		redirect := Request{url: url}
 		response = redirect.do()
 	}
-	println(response)
+	if response.status.starts_with('2') {
+		println(response.body.join('\r\n'))
+	} else {
+		println('$response.status $response.meta')
+	}
 }
 
 // Takes in a user familar string and outputs a URI

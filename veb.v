@@ -24,9 +24,14 @@ fn main() {
 	if os.args.len > 1 {
 		input = os.args[1]
 	}
-	url := process_destination(input)?
+	mut url := process_destination(input)?
 	request := Request{url: url}
-	response := request.do()
+	mut response := request.do()
+	if response.status.starts_with('3') {
+		url = process_destination(response.meta)?
+		redirect := Request{url: url}
+		response = redirect.do()
+	}
 	println(response)
 }
 

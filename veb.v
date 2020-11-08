@@ -1,5 +1,6 @@
 module main
 
+import os
 import strings
 import net.openssl
 import net.urllib { URL }
@@ -9,24 +10,39 @@ const (
 )
 
 struct Request {
-	host_name string
-	port      int
-	path      string
-	query     string
+	url URL
+}
+
+struct Response {
+	status string
+	meta   string
+	body   []string
 }
 
 fn main() {
-	mut url := urllib.parse('gemini://gemini.circumlunar.space/') ?
+	mut input := 'gemini.circumlunar.space'
+	if os.args.len > 1 {
+		input = os.args[1]
+	}
+	url := process_destination(input)?
+	request := Request{url: url}
+	response := request.do()
+	println(response)
+}
+
+// Takes in a user familar string and outputs a URI
+fn process_destination(dest string) ?URL {
+	mut input := dest
+	// Default scheme is `gemini`
+	if !dest.starts_with('gemini://') {
+		input = 'gemini://$input'
+	}
+	mut url := urllib.parse(input)?
 	// Default port
 	if !url.host.ends_with(':1965') {
 		url.host = '$url.host:1965'
 	}
-	// Default scheme
-	if url.scheme == '' {
-		url.scheme = 'gemini'
-	}
-	response := fetch(url) ?
-	println(response)
+	return url
 }
 
 fn fetch(url URL) ?string {
@@ -79,4 +95,26 @@ fn fetch(url URL) ?string {
 		C.SSL_CTX_free(ctx)
 	}
 	return content.str()
+}
+
+// Process received text into a reponse
+fn (req Request) do() Response {
+	result := fetch(req.url) or { '50 Could not reach server\r\n' }
+	lines := result.split_into_lines()
+	status := lines[0].substr(0, 2)
+	meta := lines[0].substr(2, lines[0].len).trim_space()
+	if lines.len > 1 {
+		// Repsponse with body
+		return Response{
+			status: status
+			meta: meta
+			body: lines.slice(1, lines.len)
+		}
+	} else {
+		// Header only reponse
+		return Response{
+			status: status
+			meta: meta
+		}
+	}
 }

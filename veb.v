@@ -4,6 +4,8 @@ import os
 import strings
 import net.openssl
 import net.urllib { URL }
+import term
+import term.ui
 
 const (
 	bufsize = 1536
@@ -17,6 +19,14 @@ struct Response {
 	status string
 	meta   string
 	body   []string
+}
+
+struct Browser {
+mut:
+	ui       &ui.Context = 0
+	width    int = 80
+	height   int = 60
+	response Response
 }
 
 fn main() {
@@ -33,29 +43,76 @@ fn main() {
 	}
 }
 
-// Interactive mode
-fn terminal() {
-	println('TODO: Implement terminal mode')
+fn event(e &ui.Event, x voidptr) {
+	// mut browser := &Browser(x)
+	// Quit
+	if e.typ == .key_down && e.code == .q {
+		exit(0)
+	}
 }
 
-// Command Line Interface
-fn cli() {
+fn frame(x voidptr) {
+	mut browser := &Browser(x)
+	// browser.ui.clear()
+	browser.ui.draw_text(0, 0, '$browser.response.status $browser.response.meta')
+	match browser.response.status {
+		'20' {
+			for ix, line in browser.response.body {
+				browser.ui.draw_text(0, ix + 1, line)
+			}
+		}
+		else {
+			browser.ui.draw_text(4, 0, browser.response.meta)
+		}
+	}
+	// browser.ui.reset()
+	browser.ui.flush()
+}
+
+// Default or requested location
+fn build_initial_location() URL {
 	mut input := 'gemini.circumlunar.space'
 	if os.args.len > 1 {
 		input = os.args[1]
 	}
-	mut url := process_destination(input) or {
-		panic('error: $err')
-	}
+	url := process_destination(input)
+	return url
+}
+
+// Load starting URL
+fn landing() Response {
+	mut url := build_initial_location()
 	request := Request{url: url}
 	mut response := request.do()
 	if response.status.starts_with('3') {
-		url = process_destination(response.meta) or {
-			panic('error: $err')
-		}
+		url = process_destination(response.meta)
 		redirect := Request{url: url}
 		response = redirect.do()
 	}
+	return response
+}
+
+// Interactive mode
+fn terminal() {
+	width, height := term.get_terminal_size()
+	mut browser := &Browser{}
+	browser.width = width
+	browser.height = height
+	browser.response = landing()
+	browser.ui = ui.init(
+		user_data: browser
+		event_fn: event
+		frame_fn: frame
+		hide_cursor: true
+	)
+	browser.ui.clear()
+	browser.ui.reset()
+	browser.ui.run()
+}
+
+// Command Line Interface
+fn cli() {
+	response := landing()
 	if response.status.starts_with('2') {
 		println(response.body.join('\r\n'))
 	} else {
@@ -63,14 +120,16 @@ fn cli() {
 	}
 }
 
-// Takes in a user familar string and outputs a URI
-fn process_destination(dest string) ?URL {
+// Takes in a user-familiar string and outputs a URI
+fn process_destination(dest string) URL {
 	mut input := dest
 	// Default scheme is `gemini`
 	if !dest.starts_with('gemini://') {
 		input = 'gemini://$input'
 	}
-	mut url := urllib.parse(input)?
+	mut url := urllib.parse(input) or {
+		panic("Invalid target destination: $input")
+	}
 	// Default port
 	if !url.host.ends_with(':1965') {
 		url.host = '$url.host:1965'
